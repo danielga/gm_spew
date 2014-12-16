@@ -41,7 +41,6 @@ solution("gm_spew")
 			SCANNING_FOLDER .. "/SymbolFinder.cpp"
 		})
 		vpaths({
-			["Headers"] = SOURCE_FOLDER .. "/**.hpp",
 			["Sources"] = {
 				SOURCE_FOLDER .. "/**.cpp",
 				SCANNING_FOLDER .. "/*.cpp"
@@ -86,7 +85,6 @@ solution("gm_spew")
 			SCANNING_FOLDER .. "/SymbolFinder.cpp"
 		})
 		vpaths({
-			["Headers"] = SOURCE_FOLDER .. "/**.hpp",
 			["Sources"] = {
 				SOURCE_FOLDER .. "/**.cpp",
 				SCANNING_FOLDER .. "/**.cpp"
