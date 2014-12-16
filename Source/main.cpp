@@ -51,16 +51,13 @@ LUA_FUNCTION_STATIC( HookRun )
 
 	LUA->PushSpecial( GarrysMod::Lua::SPECIAL_GLOB );
 	LUA->GetField( -1, "hook" );
-	if( !LUA->IsType( -1, GarrysMod::Lua::Type::TABLE ) )
-		return 0;
-
 	LUA->GetField( -1, "Run" );
 
 	for( int i = 1; i <= args; ++i )
 		LUA->Push( i );
 
-	LUA->Call( args, -1 );
-	return LUA->Top( ) - args - 2;
+	LUA->Call( args, 1 );
+	return 1;
 }
 
 LUA_FUNCTION_STATIC( ErrorTraceback )
