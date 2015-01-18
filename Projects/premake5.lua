@@ -1,6 +1,5 @@
 SDK_FOLDER = "E:/Programming/source-sdk-2013/mp/src"
 GARRYSMOD_INCLUDE_FOLDER = "../gmod-module-base/include"
-SCANNING_FOLDER = "../scanning"
 SOURCE_FOLDER = "../Source"
 PROJECT_FOLDER = os.get() .. "/" .. _ACTION
 
@@ -32,20 +31,11 @@ solution("gm_spew")
 		includedirs({
 			SOURCE_FOLDER,
 			GARRYSMOD_INCLUDE_FOLDER,
-			SCANNING_FOLDER,
 			SDK_FOLDER .. "/public",
 			SDK_FOLDER .. "/public/tier0"
 		})
-		files({
-			SOURCE_FOLDER .. "/main.cpp",
-			SCANNING_FOLDER .. "/SymbolFinder.cpp"
-		})
-		vpaths({
-			["Sources"] = {
-				SOURCE_FOLDER .. "/**.cpp",
-				SCANNING_FOLDER .. "/*.cpp"
-			}
-		})
+		files({SOURCE_FOLDER .. "/main.cpp"})
+		vpaths({["Sources"] = SOURCE_FOLDER .. "/**.cpp"})
 		links({"tier0", "tier1"})
 
 		targetprefix("")
@@ -76,20 +66,11 @@ solution("gm_spew")
 		includedirs({
 			SOURCE_FOLDER,
 			GARRYSMOD_INCLUDE_FOLDER,
-			SCANNING_FOLDER,
 			SDK_FOLDER .. "/public",
 			SDK_FOLDER .. "/public/tier0"
 		})
-		files({
-			SOURCE_FOLDER .. "/main.cpp",
-			SCANNING_FOLDER .. "/SymbolFinder.cpp"
-		})
-		vpaths({
-			["Sources"] = {
-				SOURCE_FOLDER .. "/**.cpp",
-				SCANNING_FOLDER .. "/**.cpp"
-			}
-		})
+		files({SOURCE_FOLDER .. "/main.cpp"})
+		vpaths({["Sources"] = SOURCE_FOLDER .. "/**.cpp"})
 		links({"tier0", "tier1"})
 
 		targetprefix("")

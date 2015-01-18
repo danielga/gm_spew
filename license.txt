@@ -1,6 +1,6 @@
 gm_spew
-A Garry's Mod module for grabbing the console output and sending it
-to Lua (also lets developers block this output being printed).
+A Garry's Mod module that intercepts the engine's messages and
+passes them to Lua. Also able to prevent them from printing.
 -----------------------------------------------------------------------
 Copyright (c) 2014, Daniel Almeida
 All rights reserved.
