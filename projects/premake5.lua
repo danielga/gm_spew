@@ -1,6 +1,6 @@
 SDK_FOLDER = "E:/Programming/source-sdk-2013/mp/src"
 GARRYSMOD_INCLUDE_FOLDER = "../gmod-module-base/include"
-SOURCE_FOLDER = "../Source"
+SOURCE_FOLDER = "../source"
 PROJECT_FOLDER = os.get() .. "/" .. _ACTION
 
 solution("gm_spew")
@@ -16,14 +16,14 @@ solution("gm_spew")
 	filter("configurations:Release")
 		optimize("On")
 		vectorextensions("SSE2")
-		objdir(PROJECT_FOLDER .. "/Intermediate")
-		targetdir(PROJECT_FOLDER .. "/Release")
+		objdir(PROJECT_FOLDER .. "/intermediate")
+		targetdir(PROJECT_FOLDER .. "/release")
 
 	filter("configurations:Debug")
 		flags({"Symbols"})
 		vectorextensions("SSE2")
-		objdir(PROJECT_FOLDER .. "/Intermediate")
-		targetdir(PROJECT_FOLDER .. "/Debug")
+		objdir(PROJECT_FOLDER .. "/intermediate")
+		targetdir(PROJECT_FOLDER .. "/debug")
 
 	project("gmsv_spew")
 		kind("SharedLib")
