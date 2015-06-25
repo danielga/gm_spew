@@ -1,5 +1,6 @@
 #include <GarrysMod/Lua/Interface.h>
 #include <GarrysMod/Lua/LuaInterface.h>
+#include <lua.hpp>
 #include <dbg.h>
 #include <color.h>
 #include <sstream>
