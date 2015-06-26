@@ -6,7 +6,7 @@ A Garry's Mod module that intercepts the engine's messages and passes them to Lu
 Info
 -------
 
-Mac was not tested at all (sorry but I'm cheap and lazy).
+Mac was not tested at all (sorry but I'm poor).
 
 If stuff starts erroring or fails to work, be sure to check the correct line endings (\n and such) are present in the files for each OS.
 
