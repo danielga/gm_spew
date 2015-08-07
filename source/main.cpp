@@ -1,34 +1,22 @@
 #include <GarrysMod/Lua/Interface.h>
-#include <GarrysMod/Lua/LuaInterface.h>
-#include <lua.hpp>
 #include <dbg.h>
 #include <color.h>
-#include <sstream>
+#include <cstdint>
 #include <queue>
 #include <mutex>
-#include <stdint.h>
 
-#if defined _WIN32
-
-	#include <Windows.h>
-
-	DWORD mainthread;
-
-#else
-
-	#include <pthread.h>
-
-	pthread_t mainthread;
-
-#endif
-
-GarrysMod::Lua::ILuaInterface *lua = nullptr;
-SpewOutputFunc_t oldspew = nullptr;
-volatile bool insidespew = false;
+namespace spew
+{
 
 struct Spew
 {
+	Spew( ) :
+		type( SPEW_MESSAGE ),
+		level( -1 )
+	{ }
+
 	Spew( SpewType_t type, int level, const char *group, const Color &color, const char *msg ) :
+		time( Plat_FloatTime( ) ),
 		type( type ),
 		level( level ),
 		group( group ),
@@ -36,175 +24,223 @@ struct Spew
 		msg( msg )
 	{ }
 
+	double time;
 	SpewType_t type;
-	int level;
+	int32_t level;
 	std::string group;
 	Color color;
 	std::string msg;
 };
 
-std::queue<Spew> spew_queue;
-std::mutex spew_locker;
+static const size_t MAX_MESSAGES = 100000;
+static SpewOutputFunc_t original_spew = nullptr;
+static std::queue<Spew> spew_queue;
+static std::mutex spew_locker;
+static bool blocked_spews[SPEW_TYPE_COUNT] = { false };
 
-LUA_FUNCTION_STATIC( HookRun )
+LUA_FUNCTION_STATIC( Get )
 {
-	int args = LUA->Top( );
+	size_t count = 1;
+	if( LUA->Top( ) != 0 )
+		count = static_cast<size_t>( LUA->CheckNumber( 1 ) );
 
-	LUA->PushSpecial( GarrysMod::Lua::SPECIAL_GLOB );
-	LUA->GetField( -1, "hook" );
-	LUA->GetField( -1, "Run" );
+	size_t size = spew_queue.size( );
+	if( count > size )
+		count = size;
 
-	for( int i = 1; i <= args; ++i )
-		LUA->Push( i );
+	if( count == 0 )
+		return 0;
 
-	LUA->Call( args, 1 );
-	return 1;
-}
+	LUA->CreateTable( );
 
-LUA_FUNCTION_STATIC( ErrorTraceback )
-{
-	GarrysMod::Lua::ILuaInterface *lua = static_cast<GarrysMod::Lua::ILuaInterface *>( LUA );
-
-	std::string spaces( 2, ' ' );
-	std::ostringstream stream;
-	stream << LUA->GetString( 1 ) << '\n';
-
-	lua_Debug dbg = { 0 };
-	for( int level = 1; lua->GetStack( level, &dbg ) == 1; ++level, memset( &dbg, 0, sizeof( dbg ) ) )
+	Spew spew;
+	for( size_t k = 0; k < count; ++k )
 	{
-		if( level != 1 )
-			stream << '\n';
+		spew_locker.lock( );
+		spew = spew_queue.front( );
+		spew_queue.pop( );
+		spew_locker.unlock( );
 
-		lua->GetInfo( "Sln", &dbg );
-		stream
-			<< spaces
-			<< level
-			<< ". "
-			<< ( dbg.name == nullptr ? "unknown" : dbg.name )
-			<< " - "
-			<< dbg.short_src
-			<< ':'
-			<< dbg.currentline;
-		spaces += ' ';
+		LUA->PushNumber( k + 1 );
+		LUA->CreateTable( );
+
+		LUA->PushNumber( spew.time );
+		LUA->SetField( -2, "time" );
+
+		LUA->PushNumber( spew.type );
+		LUA->SetField( -2, "type" );
+
+		LUA->PushNumber( spew.level );
+		LUA->SetField( -2, "message" );
+
+		LUA->PushString( spew.group.c_str( ) );
+		LUA->SetField( -2, "group" );
+
+		LUA->CreateTable( );
+
+		LUA->PushNumber( spew.color[0] );
+		LUA->SetField( -2, "r" );
+
+		LUA->PushNumber( spew.color[1] );
+		LUA->SetField( -2, "g" );
+
+		LUA->PushNumber( spew.color[2] );
+		LUA->SetField( -2, "b" );
+
+		LUA->PushNumber( spew.color[3] );
+		LUA->SetField( -2, "a" );
+
+		LUA->SetField( -2, "color" );
+
+		LUA->PushString( spew.msg.c_str( ) );
+		LUA->SetField( -2, "message" );
+
+		LUA->SetTable( -3 );
 	}
 
-	LUA->PushString( stream.str( ).c_str( ) );
 	return 1;
 }
 
-static bool SpewToLua( SpewType_t type, int level, const char *group, const Color &color, const char *msg )
+LUA_FUNCTION_STATIC( Block )
 {
-	lua->PushCFunction( ErrorTraceback );
-	lua->PushCFunction( HookRun );
-	lua->PushString( "EngineSpew" );
-	lua->PushNumber( type );
-	lua->PushNumber( level );
-	lua->PushString( group );
-	lua->PushNumber( color[0] );
-	lua->PushNumber( color[1] );
-	lua->PushNumber( color[2] );
-	lua->PushString( msg );
+	int32_t type = -1;
+	if( LUA->Top( ) != 0 )
+		type = static_cast<uint32_t>( LUA->CheckNumber( 1 ) );
 
-	bool dontcall = false;
-	if( lua->PCall( 8, 1, -10 ) == 0 )
-		dontcall = lua->IsType( -1, GarrysMod::Lua::Type::BOOL ) && !lua->GetBool( -1 );
-	else
-		lua->Msg( "\n[ERROR] %s\n\n", lua->GetString( -1 ) );
+	switch( type )
+	{
+	case -1:
+		for( size_t k = 0; k < SPEW_TYPE_COUNT; ++k )
+			blocked_spews[k] = true;
 
-	lua->Pop( 1 );
+		break;
 
-	return dontcall;
+	case SPEW_MESSAGE:
+	case SPEW_WARNING:
+	case SPEW_ASSERT:
+	case SPEW_ERROR:
+	case SPEW_LOG:
+		blocked_spews[type] = true;
+		LUA->PushBool( true );
+		break;
+
+	default:
+		LUA->PushBool( false );
+		break;
+	}
+
+	return 1;
+}
+
+LUA_FUNCTION_STATIC( Unblock )
+{
+	int32_t type = -1;
+	if( LUA->Top( ) != 0 )
+		type = static_cast<uint32_t>( LUA->CheckNumber( 1 ) );
+
+	switch( type )
+	{
+	case -1:
+		for( size_t k = 0; k < SPEW_TYPE_COUNT; ++k )
+			blocked_spews[k] = false;
+
+		break;
+
+	case SPEW_MESSAGE:
+	case SPEW_WARNING:
+	case SPEW_ASSERT:
+	case SPEW_ERROR:
+	case SPEW_LOG:
+		blocked_spews[type] = false;
+		LUA->PushBool( true );
+		break;
+
+	default:
+		LUA->PushBool( false );
+		break;
+	}
+
+	return 1;
 }
 
 static SpewRetval_t EngineSpewReceiver( SpewType_t type, const char *msg )
 {
-
-#if defined _WIN32
-
-	if( GetCurrentThreadId( ) != mainthread )
-
-#else
-
-	if( pthread_self( ) != mainthread )
-
-#endif
-
-	{
-		spew_locker.lock( );
-		spew_queue.push(
-			Spew(
-				type,
-				GetSpewOutputLevel( ),
-				GetSpewOutputGroup( ),
-				*GetSpewOutputColor( ),
-				msg
-			)
-		);
-		spew_locker.unlock( );
-
-		return oldspew( type, msg );
-	}
-
-	if( insidespew )
-		return oldspew( type, msg );
-
-	insidespew = true;
-
-	while( !spew_queue.empty( ) )
-	{
-		spew_locker.lock( );
-		Spew spew = spew_queue.front( );
+	spew_locker.lock( );
+	if( spew_queue.size( ) >= MAX_MESSAGES )
 		spew_queue.pop( );
-		spew_locker.unlock( );
-		SpewToLua( spew.type, spew.level, spew.group.c_str( ), spew.color, spew.msg.c_str( ) );
-	}
 
-	bool dontcall = SpewToLua( type, GetSpewOutputLevel( ), GetSpewOutputGroup( ), *GetSpewOutputColor( ), msg );
+	spew_queue.push( Spew(
+		type,
+		GetSpewOutputLevel( ),
+		GetSpewOutputGroup( ),
+		*GetSpewOutputColor( ),
+		msg
+	) );
+	spew_locker.unlock( );
 
-	insidespew = false;
-
-	return dontcall ? SPEW_CONTINUE : oldspew( type, msg );
+	return ( type < SPEW_TYPE_COUNT && blocked_spews[type] ) ? SPEW_CONTINUE : original_spew( type, msg );
 }
 
-GMOD_MODULE_OPEN( )
+static void Initialize( lua_State *state )
 {
-	lua = static_cast<GarrysMod::Lua::ILuaInterface *>( LUA );
-
-	#if defined _WIN32
-
-		mainthread = GetCurrentThreadId( );
-
-	#else
-
-		mainthread = pthread_self( );
-
-	#endif
-
-	oldspew = GetSpewOutputFunc( );
+	original_spew = GetSpewOutputFunc( );
 	SpewOutputFunc( EngineSpewReceiver );
 
 	LUA->PushSpecial( GarrysMod::Lua::SPECIAL_GLOB );
 
+	LUA->CreateTable( );
+
 	LUA->PushNumber( SPEW_MESSAGE );
-	LUA->SetField( -2, "SPEW_MESSAGE" );
+	LUA->SetField( -2, "MESSAGE" );
 
 	LUA->PushNumber( SPEW_WARNING );
-	LUA->SetField( -2, "SPEW_WARNING" );
+	LUA->SetField( -2, "WARNING" );
 
 	LUA->PushNumber( SPEW_ASSERT );
-	LUA->SetField( -2, "SPEW_ASSERT" );
+	LUA->SetField( -2, "ASSERT" );
 
 	LUA->PushNumber( SPEW_ERROR );
-	LUA->SetField( -2, "SPEW_ERROR" );
+	LUA->SetField( -2, "ERROR" );
 
 	LUA->PushNumber( SPEW_LOG );
-	LUA->SetField( -2, "SPEW_LOG" );
+	LUA->SetField( -2, "LOG" );
 
+	LUA->PushCFunction( spew::Get );
+	LUA->SetField( -2, "Get" );
+
+	LUA->PushCFunction( spew::Block );
+	LUA->SetField( -2, "Block" );
+
+	LUA->PushCFunction( spew::Unblock );
+	LUA->SetField( -2, "Unblock" );
+
+	LUA->SetField( -2, "spew" );
+
+	LUA->Pop( 1 );
+}
+
+static void Deinitialize( lua_State *state )
+{
+	SpewOutputFunc( original_spew );
+
+	LUA->PushSpecial( GarrysMod::Lua::SPECIAL_GLOB );
+
+	LUA->PushNil( );
+	LUA->SetField( -2, "spew" );
+
+	LUA->Pop( 1 );
+}
+
+}
+
+GMOD_MODULE_OPEN( )
+{
+	spew::Initialize( state );
 	return 0;
 }
 
 GMOD_MODULE_CLOSE( )
 {
-	SpewOutputFunc( oldspew );
+	spew::Deinitialize( state );
 	return 0;
 }
