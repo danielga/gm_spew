@@ -2,7 +2,7 @@ gm_spew
 A Garry's Mod module that intercepts the engine's messages and
 passes them to Lua. Also able to prevent them from printing.
 -----------------------------------------------------------------------
-Copyright (c) 2015, Daniel Almeida
+Copyright (c) 2015-2017, Daniel Almeida
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without

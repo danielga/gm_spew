@@ -181,7 +181,7 @@ static SpewRetval_t EngineSpewReceiver( SpewType_t type, const char *msg )
 	return ( type < SPEW_TYPE_COUNT && blocked_spews[type] ) ? SPEW_CONTINUE : original_spew( type, msg );
 }
 
-static void Initialize( lua_State *state )
+static void Initialize( GarrysMod::Lua::ILuaBase *LUA )
 {
 	original_spew = GetSpewOutputFunc( );
 	SpewOutputFunc( EngineSpewReceiver );
@@ -219,7 +219,7 @@ static void Initialize( lua_State *state )
 	LUA->Pop( 1 );
 }
 
-static void Deinitialize( lua_State *state )
+static void Deinitialize( GarrysMod::Lua::ILuaBase *LUA )
 {
 	SpewOutputFunc( original_spew );
 
@@ -235,12 +235,12 @@ static void Deinitialize( lua_State *state )
 
 GMOD_MODULE_OPEN( )
 {
-	spew::Initialize( state );
+	spew::Initialize( LUA );
 	return 0;
 }
 
 GMOD_MODULE_CLOSE( )
 {
-	spew::Deinitialize( state );
+	spew::Deinitialize( LUA );
 	return 0;
 }
