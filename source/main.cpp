@@ -11,11 +11,12 @@ namespace spew
 struct Spew
 {
 	Spew( ) :
+		time( 0.0 ),
 		type( SPEW_MESSAGE ),
 		level( -1 )
 	{ }
 
-	Spew( SpewType_t type, int level, const char *group, const Color &color, const char *msg ) :
+	Spew( SpewType_t type, int32_t level, const char *group, const Color &color, const char *msg ) :
 		time( Plat_FloatTime( ) ),
 		type( type ),
 		level( level ),
@@ -32,11 +33,11 @@ struct Spew
 	std::string msg;
 };
 
-static const size_t MAX_MESSAGES = 100000;
+static const size_t MaxMessages = 1000;
 static SpewOutputFunc_t original_spew = nullptr;
 static std::queue<Spew> spew_queue;
 static std::mutex spew_locker;
-static bool blocked_spews[SPEW_TYPE_COUNT] = { false };
+static bool blocked_spews[SPEW_TYPE_COUNT] = { false, false, false, false, false };
 
 LUA_FUNCTION_STATIC( Get )
 {
@@ -53,13 +54,14 @@ LUA_FUNCTION_STATIC( Get )
 
 	LUA->CreateTable( );
 
-	Spew spew;
 	for( size_t k = 0; k < count; ++k )
 	{
-		spew_locker.lock( );
-		spew = spew_queue.front( );
-		spew_queue.pop( );
-		spew_locker.unlock( );
+		Spew spew;
+		{
+			std::lock_guard<std::mutex> lock( spew_locker );
+			spew = spew_queue.front( );
+			spew_queue.pop( );
+		}
 
 		LUA->PushNumber( k + 1 );
 		LUA->CreateTable( );
@@ -105,7 +107,7 @@ LUA_FUNCTION_STATIC( Block )
 {
 	int32_t type = -1;
 	if( LUA->Top( ) != 0 )
-		type = static_cast<uint32_t>( LUA->CheckNumber( 1 ) );
+		type = static_cast<int32_t>( LUA->CheckNumber( 1 ) );
 
 	switch( type )
 	{
@@ -113,6 +115,7 @@ LUA_FUNCTION_STATIC( Block )
 		for( size_t k = 0; k < SPEW_TYPE_COUNT; ++k )
 			blocked_spews[k] = true;
 
+		LUA->PushBool( true );
 		break;
 
 	case SPEW_MESSAGE:
@@ -136,7 +139,7 @@ LUA_FUNCTION_STATIC( Unblock )
 {
 	int32_t type = -1;
 	if( LUA->Top( ) != 0 )
-		type = static_cast<uint32_t>( LUA->CheckNumber( 1 ) );
+		type = static_cast<int32_t>( LUA->CheckNumber( 1 ) );
 
 	switch( type )
 	{
@@ -144,6 +147,7 @@ LUA_FUNCTION_STATIC( Unblock )
 		for( size_t k = 0; k < SPEW_TYPE_COUNT; ++k )
 			blocked_spews[k] = false;
 
+		LUA->PushBool( true );
 		break;
 
 	case SPEW_MESSAGE:
@@ -165,20 +169,20 @@ LUA_FUNCTION_STATIC( Unblock )
 
 static SpewRetval_t EngineSpewReceiver( SpewType_t type, const char *msg )
 {
-	spew_locker.lock( );
-	if( spew_queue.size( ) >= MAX_MESSAGES )
+	std::lock_guard<std::mutex> lock( spew_locker );
+	if( spew_queue.size( ) >= MaxMessages )
 		spew_queue.pop( );
 
-	spew_queue.push( Spew(
+	spew_queue.emplace(
 		type,
 		GetSpewOutputLevel( ),
 		GetSpewOutputGroup( ),
 		*GetSpewOutputColor( ),
 		msg
-	) );
-	spew_locker.unlock( );
+	);
 
-	return ( type < SPEW_TYPE_COUNT && blocked_spews[type] ) ? SPEW_CONTINUE : original_spew( type, msg );
+	return ( type < SPEW_TYPE_COUNT && blocked_spews[type] ) ? SPEW_CONTINUE :
+		original_spew( type, msg );
 }
 
 static void Initialize( GarrysMod::Lua::ILuaBase *LUA )
@@ -186,9 +190,14 @@ static void Initialize( GarrysMod::Lua::ILuaBase *LUA )
 	original_spew = GetSpewOutputFunc( );
 	SpewOutputFunc( EngineSpewReceiver );
 
-	LUA->PushSpecial( GarrysMod::Lua::SPECIAL_GLOB );
-
 	LUA->CreateTable( );
+
+	LUA->PushString( "spew 1.0.0" );
+	LUA->SetField( -2, "Version" );
+
+	// version num follows LuaJIT style, xxyyzz
+	LUA->PushNumber( 10000 );
+	LUA->SetField( -2, "VersionNum" );
 
 	LUA->PushNumber( SPEW_MESSAGE );
 	LUA->SetField( -2, "MESSAGE" );
@@ -205,30 +214,24 @@ static void Initialize( GarrysMod::Lua::ILuaBase *LUA )
 	LUA->PushNumber( SPEW_LOG );
 	LUA->SetField( -2, "LOG" );
 
-	LUA->PushCFunction( spew::Get );
+	LUA->PushCFunction( Get );
 	LUA->SetField( -2, "Get" );
 
-	LUA->PushCFunction( spew::Block );
+	LUA->PushCFunction( Block );
 	LUA->SetField( -2, "Block" );
 
-	LUA->PushCFunction( spew::Unblock );
+	LUA->PushCFunction( Unblock );
 	LUA->SetField( -2, "Unblock" );
 
-	LUA->SetField( -2, "spew" );
-
-	LUA->Pop( 1 );
+	LUA->SetField( GarrysMod::Lua::INDEX_GLOBAL, "spew" );
 }
 
 static void Deinitialize( GarrysMod::Lua::ILuaBase *LUA )
 {
 	SpewOutputFunc( original_spew );
 
-	LUA->PushSpecial( GarrysMod::Lua::SPECIAL_GLOB );
-
 	LUA->PushNil( );
-	LUA->SetField( -2, "spew" );
-
-	LUA->Pop( 1 );
+	LUA->SetField( GarrysMod::Lua::INDEX_GLOBAL, "spew" );
 }
 
 }
