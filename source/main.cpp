@@ -1,6 +1,8 @@
 #include <GarrysMod/Lua/Interface.h>
+
 #include <dbg.h>
 #include <Color.h>
+
 #include <cstdint>
 #include <queue>
 #include <mutex>

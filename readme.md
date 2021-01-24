@@ -1,14 +1,24 @@
-# gm_spew
+# gm\_spew
 
 A Garry's Mod module that intercepts the engine's messages and passes them to Lua. Also able to prevent them from printing.
 
-## Info
+## Compiling
 
-Mac was not tested at all (sorry but I'm poor).
+The only supported compilation platform for this project on Windows is **Visual Studio 2017**. However, it's possible it'll work with *Visual Studio 2015* and *Visual Studio 2019* because of the unified runtime.
 
-If stuff starts erroring or fails to work, be sure to check the correct line endings (\n and such) are present in the files for each OS.
+On Linux, everything should work fine as is.
 
-This project requires [garrysmod_common][1], a framework to facilitate the creation of compilations files (Visual Studio, make, XCode, etc). Simply set the environment variable 'GARRYSMOD_COMMON' or the premake option 'gmcommon' to the path of your local copy of [garrysmod_common][1]. We also use [SourceSDK2013][2], so set the environment variable 'SOURCE_SDK' or the premake option 'sourcesdk' to the path of your local copy of [SourceSDK2013][2]. The previous links to [SourceSDK2013][2] point to my own fork of VALVe's repo and for good reason: Garry's Mod has lots of backwards incompatible changes to interfaces and it's much smaller, being perfect for automated build systems like Travis-CI.
+For macOS, any **Xcode (using the GCC compiler)** version *MIGHT* work as long as the **Mac OSX 10.7 SDK** is used.
+
+These restrictions are not random; they exist because of ABI compatibility reasons.
+
+If stuff starts erroring or fails to work, be sure to check the correct line endings (`\n` and such) are present in the files for each OS.
+
+## Requirements
+
+This project requires [garrysmod\_common][1], a framework to facilitate the creation of compilations files (Visual Studio, make, XCode, etc). Simply set the environment variable `GARRYSMOD_COMMON` or the premake option `--gmcommon=path` to the path of your local copy of [garrysmod\_common][1].
+
+We also use [SourceSDK2013][2]. The links to [SourceSDK2013][2] point to my own fork of VALVe's repo and for good reason: Garry's Mod has lots of backwards incompatible changes to interfaces and it's much smaller, being perfect for automated build systems like Azure Pipelines.
 
   [1]: https://github.com/danielga/garrysmod_common
   [2]: https://github.com/danielga/sourcesdk-minimal
