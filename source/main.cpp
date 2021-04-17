@@ -6,18 +6,14 @@
 #include <cstdint>
 #include <queue>
 #include <mutex>
+#include <limits>
 
 namespace spew
 {
 
-struct Spew
+class Spew
 {
-	Spew( ) :
-		time( 0.0 ),
-		type( SPEW_MESSAGE ),
-		level( -1 )
-	{ }
-
+public:
 	Spew( SpewType_t type, int32_t level, const char *group, const Color &color, const char *msg ) :
 		time( Plat_FloatTime( ) ),
 		type( type ),
@@ -27,6 +23,43 @@ struct Spew
 		msg( msg )
 	{ }
 
+	void ToLua( GarrysMod::Lua::ILuaBase *LUA ) const
+	{
+		LUA->CreateTable( );
+
+			LUA->PushNumber( time );
+			LUA->SetField( -2, "time" );
+
+			LUA->PushNumber( type );
+			LUA->SetField( -2, "type" );
+
+			LUA->PushNumber( level );
+			LUA->SetField( -2, "level" );
+
+			LUA->PushString( group.c_str( ) );
+			LUA->SetField( -2, "group" );
+
+			LUA->CreateTable( );
+
+				LUA->PushNumber( color[0] );
+				LUA->SetField( -2, "r" );
+
+				LUA->PushNumber( color[1] );
+				LUA->SetField( -2, "g" );
+
+				LUA->PushNumber( color[2] );
+				LUA->SetField( -2, "b" );
+
+				LUA->PushNumber( color[3] );
+				LUA->SetField( -2, "a" );
+
+			LUA->SetField( -2, "color" );
+
+			LUA->PushString( msg.c_str( ) );
+			LUA->SetField( -2, "message" );
+	}
+
+private:
 	double time;
 	SpewType_t type;
 	int32_t level;
@@ -35,69 +68,49 @@ struct Spew
 	std::string msg;
 };
 
-static const size_t MaxMessages = 1000;
+static size_t max_messages = 1000;
 static SpewOutputFunc_t original_spew = nullptr;
 static std::queue<Spew> spew_queue;
 static std::mutex spew_locker;
 static bool blocked_spews[SPEW_TYPE_COUNT] = { false, false, false, false, false };
 
-LUA_FUNCTION_STATIC( Get )
+static std::vector<Spew> PopMessages( const size_t num = -1 )
 {
-	size_t count = 1;
-	if( LUA->Top( ) != 0 )
-		count = static_cast<size_t>( LUA->CheckNumber( 1 ) );
-
-	size_t size = spew_queue.size( );
+	size_t count = num;
+	const size_t size = spew_queue.size( );
 	if( count > size )
 		count = size;
 
+	std::vector<Spew> messages;
 	if( count == 0 )
+		return messages;
+
+	messages.reserve( count );
+
+	std::lock_guard<std::mutex> lock( spew_locker );
+	for( size_t k = 0; k < count; ++k )
+	{
+		messages.emplace_back( spew_queue.front( ) );
+		spew_queue.pop( );
+	}
+
+	return messages;
+}
+
+static int32_t PushMessages( GarrysMod::Lua::ILuaBase *LUA, const size_t num = -1 )
+{
+	const std::vector<Spew> messages = PopMessages( num );
+	if( messages.empty( ) )
 		return 0;
 
 	LUA->CreateTable( );
 
-	for( size_t k = 0; k < count; ++k )
+	size_t k = 0;
+	for( const auto &spew : messages )
 	{
-		Spew spew;
-		{
-			std::lock_guard<std::mutex> lock( spew_locker );
-			spew = spew_queue.front( );
-			spew_queue.pop( );
-		}
+		LUA->PushNumber( ++k );
 
-		LUA->PushNumber( k + 1 );
-		LUA->CreateTable( );
-
-		LUA->PushNumber( spew.time );
-		LUA->SetField( -2, "time" );
-
-		LUA->PushNumber( spew.type );
-		LUA->SetField( -2, "type" );
-
-		LUA->PushNumber( spew.level );
-		LUA->SetField( -2, "message" );
-
-		LUA->PushString( spew.group.c_str( ) );
-		LUA->SetField( -2, "group" );
-
-		LUA->CreateTable( );
-
-		LUA->PushNumber( spew.color[0] );
-		LUA->SetField( -2, "r" );
-
-		LUA->PushNumber( spew.color[1] );
-		LUA->SetField( -2, "g" );
-
-		LUA->PushNumber( spew.color[2] );
-		LUA->SetField( -2, "b" );
-
-		LUA->PushNumber( spew.color[3] );
-		LUA->SetField( -2, "a" );
-
-		LUA->SetField( -2, "color" );
-
-		LUA->PushString( spew.msg.c_str( ) );
-		LUA->SetField( -2, "message" );
+		spew.ToLua( LUA );
 
 		LUA->SetTable( -3 );
 	}
@@ -105,7 +118,21 @@ LUA_FUNCTION_STATIC( Get )
 	return 1;
 }
 
-LUA_FUNCTION_STATIC( Block )
+LUA_FUNCTION_STATIC( Get )
+{
+	size_t count = 1;
+	if( LUA->Top( ) != 0 )
+		count = static_cast<size_t>( LUA->CheckNumber( 1 ) );
+
+	return PushMessages( LUA, count );
+}
+
+LUA_FUNCTION_STATIC( GetAll )
+{
+	return PushMessages( LUA );
+}
+
+static int32_t SetBlockState( GarrysMod::Lua::ILuaBase *LUA, const bool enabled )
 {
 	int32_t type = -1;
 	if( LUA->Top( ) != 0 )
@@ -113,78 +140,88 @@ LUA_FUNCTION_STATIC( Block )
 
 	switch( type )
 	{
-	case -1:
-		for( size_t k = 0; k < SPEW_TYPE_COUNT; ++k )
-			blocked_spews[k] = true;
+		case -1:
+			for( size_t k = 0; k < SPEW_TYPE_COUNT; ++k )
+				blocked_spews[k] = enabled;
 
-		LUA->PushBool( true );
-		break;
+			LUA->PushBool( true );
+			break;
 
-	case SPEW_MESSAGE:
-	case SPEW_WARNING:
-	case SPEW_ASSERT:
-	case SPEW_ERROR:
-	case SPEW_LOG:
-		blocked_spews[type] = true;
-		LUA->PushBool( true );
-		break;
+		case SPEW_MESSAGE:
+		case SPEW_WARNING:
+		case SPEW_ASSERT:
+		case SPEW_ERROR:
+		case SPEW_LOG:
+			blocked_spews[type] = enabled;
+			LUA->PushBool( true );
+			break;
 
-	default:
-		LUA->PushBool( false );
-		break;
+		default:
+			LUA->PushBool( false );
+			break;
 	}
 
 	return 1;
 }
 
+LUA_FUNCTION_STATIC( Block )
+{
+	return SetBlockState( LUA, true );
+}
+
 LUA_FUNCTION_STATIC( Unblock )
 {
-	int32_t type = -1;
-	if( LUA->Top( ) != 0 )
-		type = static_cast<int32_t>( LUA->CheckNumber( 1 ) );
+	return SetBlockState( LUA, false );
+}
 
-	switch( type )
-	{
-	case -1:
-		for( size_t k = 0; k < SPEW_TYPE_COUNT; ++k )
-			blocked_spews[k] = false;
+LUA_FUNCTION_STATIC( IsBlocked )
+{
+	const int32_t type = static_cast<int32_t>( LUA->CheckNumber( 1 ) );
+	if( type < SPEW_MESSAGE || type >= SPEW_TYPE_COUNT )
+		LUA->ArgError( 1, "unknown spew type" );
 
-		LUA->PushBool( true );
-		break;
+	LUA->PushBool( blocked_spews[type] );
+	return 1;
+}
 
-	case SPEW_MESSAGE:
-	case SPEW_WARNING:
-	case SPEW_ASSERT:
-	case SPEW_ERROR:
-	case SPEW_LOG:
-		blocked_spews[type] = false;
-		LUA->PushBool( true );
-		break;
+LUA_FUNCTION_STATIC( SetMaximumQueueSize )
+{
+	const double number = LUA->CheckNumber( 1 );
+	if( number < std::numeric_limits<size_t>::min( ) || number > std::numeric_limits<size_t>::max( ) )
+		LUA->ArgError( 1, "number is out of bounds" );
 
-	default:
-		LUA->PushBool( false );
-		break;
-	}
+	max_messages = static_cast<size_t>( number );
+	return 0;
+}
 
+LUA_FUNCTION_STATIC( GetMaximumQueueSize )
+{
+	LUA->PushNumber( static_cast<double>( max_messages ) );
 	return 1;
 }
 
 static SpewRetval_t EngineSpewReceiver( SpewType_t type, const char *msg )
 {
-	std::lock_guard<std::mutex> lock( spew_locker );
-	if( spew_queue.size( ) >= MaxMessages )
-		spew_queue.pop( );
+	{
+		Spew message(
+			type,
+			GetSpewOutputLevel( ),
+			GetSpewOutputGroup( ),
+			*GetSpewOutputColor( ),
+			msg
+		);
 
-	spew_queue.emplace(
-		type,
-		GetSpewOutputLevel( ),
-		GetSpewOutputGroup( ),
-		*GetSpewOutputColor( ),
-		msg
-	);
+		std::lock_guard<std::mutex> lock( spew_locker );
+		if( spew_queue.size( ) >= max_messages )
+			spew_queue.pop( );
 
-	return ( type < SPEW_TYPE_COUNT && blocked_spews[type] ) ? SPEW_CONTINUE :
-		original_spew( type, msg );
+		spew_queue.emplace( std::move( message ) );
+	}
+
+	if( type >= SPEW_MESSAGE && type < SPEW_TYPE_COUNT && blocked_spews[type] )
+		return SPEW_CONTINUE;
+
+	return original_spew( type, msg );
 }
 
 static void Initialize( GarrysMod::Lua::ILuaBase *LUA )
@@ -194,11 +231,11 @@ static void Initialize( GarrysMod::Lua::ILuaBase *LUA )
 
 	LUA->CreateTable( );
 
-	LUA->PushString( "spew 1.0.0" );
+	LUA->PushString( "spew 1.1.0" );
 	LUA->SetField( -2, "Version" );
 
 	// version num follows LuaJIT style, xxyyzz
-	LUA->PushNumber( 10000 );
+	LUA->PushNumber( 10100 );
 	LUA->SetField( -2, "VersionNum" );
 
 	LUA->PushNumber( SPEW_MESSAGE );
@@ -219,11 +256,23 @@ static void Initialize( GarrysMod::Lua::ILuaBase *LUA )
 	LUA->PushCFunction( Get );
 	LUA->SetField( -2, "Get" );
 
+	LUA->PushCFunction( GetAll );
+	LUA->SetField( -2, "GetAll" );
+
 	LUA->PushCFunction( Block );
 	LUA->SetField( -2, "Block" );
 
 	LUA->PushCFunction( Unblock );
 	LUA->SetField( -2, "Unblock" );
+
+	LUA->PushCFunction( IsBlocked );
+	LUA->SetField( -2, "IsBlocked" );
+
+	LUA->PushCFunction( SetMaximumQueueSize );
+	LUA->SetField( -2, "SetMaximumQueueSize" );
+
+	LUA->PushCFunction( GetMaximumQueueSize );
+	LUA->SetField( -2, "GetMaximumQueueSize" );
 
 	LUA->SetField( GarrysMod::Lua::INDEX_GLOBAL, "spew" );
 }

@@ -13,7 +13,6 @@ CreateWorkspace({name = "spew"})
 	CreateProject({serverside = true})
 		IncludeSDKCommon()
 		IncludeSDKTier0()
-		IncludeLuaShared()
 
 	CreateProject({serverside = false})
 		IncludeSDKCommon()
