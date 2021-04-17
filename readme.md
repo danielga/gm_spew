@@ -1,5 +1,7 @@
 # gm\_spew
 
+[![Build Status](https://metamann.visualstudio.com/GitHub%20danielga/_apis/build/status/danielga.gm_spew?branchName=master)](https://metamann.visualstudio.com/GitHub%20danielga/_build/latest?definitionId=18&branchName=master)
+
 A Garry's Mod module that intercepts the engine's messages and passes them to Lua. Also able to prevent them from printing.
 
 ## API reference
